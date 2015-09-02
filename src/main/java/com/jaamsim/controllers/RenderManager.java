@@ -64,7 +64,6 @@ import com.jaamsim.render.Action;
 import com.jaamsim.render.CameraInfo;
 import com.jaamsim.render.DisplayModelBinding;
 import com.jaamsim.render.Future;
-import com.jaamsim.render.HasScreenPoints;
 import com.jaamsim.render.MeshDataCache;
 import com.jaamsim.render.MeshProtoKey;
 import com.jaamsim.render.OffscreenTarget;
@@ -134,6 +133,7 @@ public class RenderManager implements DragSourceListener {
 	private long dragHandleID = 0;
 	private Vec3d dragCollisionPoint;
 	private Vec3d dragEntityPosition;
+	private ArrayList<Vec3d> dragEntityPoints;
 
 	// The object type for drag-and-drop operation, if this is null, the user is not dragging
 	private ObjectType dndObjectType;
@@ -1121,13 +1121,9 @@ public class RenderManager implements DragSourceListener {
 		Vec3d currentPoint = currentRay.getPointAtDist(currentDist);
 		Vec3d lastPoint = lastRay.getPointAtDist(lastDist);
 
-		ArrayList<Vec3d> screenPoints = null;
-		if (selectedEntity instanceof HasScreenPoints) {
-			HasScreenPoints.PointsInfo[] pointInfos = ((HasScreenPoints)selectedEntity).getScreenPoints();
-			if (pointInfos != null && pointInfos.length != 0)
-				screenPoints = pointInfos[0].points;
-		}
-		if (screenPoints == null || screenPoints.size() == 0) return true; // just ignore this
+		ArrayList<Vec3d> screenPoints = selectedEntity.getPoints();
+		if (screenPoints == null || screenPoints.isEmpty())
+			return true;
 
 		Vec3d delta = new Vec3d();
 
@@ -1155,19 +1151,14 @@ public class RenderManager implements DragSourceListener {
 
 		int nodeIndex = (int)(-1*(dragHandleID - LINENODE_PICK_ID));
 
-		ArrayList<Vec3d> screenPoints = null;
-		if (selectedEntity instanceof HasScreenPoints) {
-			HasScreenPoints.PointsInfo[] pointInfos = ((HasScreenPoints)selectedEntity).getScreenPoints();
-			if (pointInfos != null && pointInfos.length != 0)
-				screenPoints = pointInfos[0].points;
-		}
+		ArrayList<Vec3d> screenPoints = selectedEntity.getPoints();
 		if (screenPoints == null || nodeIndex >= screenPoints.size())
 			return false;
 
-		// Global mouse position on the node at the start of the move
-		Vec3d point = new Vec3d(dragCollisionPoint);
+		// Global node position at the start of the move
+		Vec3d point = selectedEntity.getGlobalPosition(dragEntityPoints.get(nodeIndex));
 
-		// New global mouse position at the end of the move
+		// Global node position at the end of the move
 		Vec3d diff = new Vec3d();
 		if (shift) {
 			diff.z = RenderUtils.getZDiff(point, currentRay, firstRay);
@@ -1202,17 +1193,14 @@ public class RenderManager implements DragSourceListener {
 
 		Mat4d rayMatrix = MathUtils.RaySpace(currentRay);
 
-		HasScreenPoints hsp = (HasScreenPoints)selectedEntity;
-		assert(hsp != null);
-
-		HasScreenPoints.PointsInfo[] pointInfos = hsp.getScreenPoints();
-		assert(pointInfos != null && pointInfos.length != 0);
+		ArrayList<Vec3d> points = selectedEntity.getPoints();
+		if (points == null || points.isEmpty())
+			return;
 
 		Transform trans = null;
 		if (selectedEntity.getCurrentRegion() != null || selectedEntity.getRelativeEntity() != null)
 			trans = selectedEntity.getGlobalPositionTransform();
 
-		ArrayList<Vec3d> points = pointInfos[0].points;
 		ArrayList<Vec3d> globalPoints = new ArrayList<>(points);
 		if (trans != null)
 			globalPoints = (ArrayList<Vec3d>) RenderUtils.transformPointsWithTrans(trans.getMat4dRef(), globalPoints);
@@ -1262,19 +1250,9 @@ public class RenderManager implements DragSourceListener {
 
 		Mat4d rayMatrix = MathUtils.RaySpace(currentRay);
 
-		HasScreenPoints hsp = (HasScreenPoints)selectedEntity;
-		assert(hsp != null);
-
-		HasScreenPoints.PointsInfo[] pointInfos = hsp.getScreenPoints();
-		if (pointInfos == null || pointInfos.length == 0)
+		ArrayList<Vec3d> points = selectedEntity.getPoints();
+		if (points == null || points.size() <= 2)
 			return;
-
-		ArrayList<Vec3d> points = pointInfos[0].points;
-		// Find a point that is within the threshold
-
-		if (points.size() <= 2) {
-			return;
-		}
 
 		ArrayList<Vec3d> globalPoints = new ArrayList<>(points);
 
@@ -1328,7 +1306,7 @@ public class RenderManager implements DragSourceListener {
 
 		if (controlDown && altDown) {
 			// Check if we can split a line segment
-			if (selectedEntity != null && selectedEntity instanceof HasScreenPoints) {
+			if (selectedEntity != null) {
 				if ((modifiers & WindowInteractionListener.MOD_SHIFT) != 0) {
 					removeLineNode(windowID, x, y);
 				} else {
@@ -1379,6 +1357,7 @@ public class RenderManager implements DragSourceListener {
 
 			// Use the entity collision point for dragging instead of the handle collision point
 			dragEntityPosition = selectedEntity.getGlobalPosition();
+			dragEntityPoints = selectedEntity.getPoints();
 			dragCollisionPoint = pickRay.getPointAtDist(entityDist);
 			dragHandleID = MOVE_PICK_ID;
 			return true;
@@ -1386,6 +1365,7 @@ public class RenderManager implements DragSourceListener {
 		if (mouseHandleDist != Double.POSITIVE_INFINITY) {
 			// We hit a mouse handle
 			dragEntityPosition = selectedEntity.getGlobalPosition();
+			dragEntityPoints = selectedEntity.getPoints();
 			dragCollisionPoint = pickRay.getPointAtDist(mouseHandleDist);
 			return true;
 		}

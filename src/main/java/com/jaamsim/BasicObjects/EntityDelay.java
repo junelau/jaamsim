@@ -18,37 +18,28 @@ import java.util.ArrayList;
 import java.util.HashMap;
 
 import com.jaamsim.Graphics.DisplayEntity;
+import com.jaamsim.Graphics.PolylineInfo;
 import com.jaamsim.Samples.SampleExpInput;
 import com.jaamsim.basicsim.EntityTarget;
 import com.jaamsim.input.BooleanInput;
 import com.jaamsim.input.ColourInput;
 import com.jaamsim.input.Input;
-import com.jaamsim.input.InputAgent;
 import com.jaamsim.input.Keyword;
-import com.jaamsim.input.KeywordIndex;
 import com.jaamsim.input.ValueInput;
-import com.jaamsim.input.Vec3dListInput;
 import com.jaamsim.math.Vec3d;
-import com.jaamsim.render.HasScreenPoints;
 import com.jaamsim.units.DimensionlessUnit;
-import com.jaamsim.units.DistanceUnit;
 import com.jaamsim.units.TimeUnit;
 
 /**
  * Moves one or more Entities along a path with a specified travel time. Entities can have different travel times, which
  * are represented as varying speeds.
  */
-public class EntityDelay extends LinkedComponent implements HasScreenPoints {
+public class EntityDelay extends LinkedComponent {
 
 	@Keyword(description = "The delay time for the path.\n" +
 			"The input can be a constant value, a time series of values, or a probability distribution to be sampled.",
 	         exampleList = { "3.0 h", "NormalDistribution1", "'1[s] + 0.5*[TimeSeries1].PresentValue'" })
 	private final SampleExpInput duration;
-
-    @Keyword(description = "A list of { x, y, z } coordinates defining the line segments that" +
-            "make up the path.  When two coordinates are given it is assumed that z = 0." ,
-             exampleList = {"{ 6.7 2.2 m } { 4.9 2.2 m } { 4.9 3.4 m }"})
-	private final Vec3dListInput pointsInput;
 
 	@Keyword(description = "If TRUE, a delayed entity is moved along the " +
 			"specified path to indicate its progression through the delay.",
@@ -70,9 +61,6 @@ public class EntityDelay extends LinkedComponent implements HasScreenPoints {
 	private final ArrayList<Double> lengthList;  // Length of each segment of the path
 	private final ArrayList<Double> cumLengthList;  // Total length to the end of each segment
 
-	private Object screenPointLock = new Object();
-	private HasScreenPoints.PointsInfo[] cachedPointInfo;
-
 	{
 		duration = new SampleExpInput("Duration", "Key Inputs", null);
 		duration.setUnitType(TimeUnit.class);
@@ -80,14 +68,6 @@ public class EntityDelay extends LinkedComponent implements HasScreenPoints {
 		duration.setValidRange(0, Double.POSITIVE_INFINITY);
 		duration.setRequired(true);
 		this.addInput(duration);
-
-		ArrayList<Vec3d> defPoints =  new ArrayList<>();
-		defPoints.add(new Vec3d(0.0d, 0.0d, 0.0d));
-		defPoints.add(new Vec3d(1.0d, 0.0d, 0.0d));
-		pointsInput = new Vec3dListInput("Points", "Key Inputs", defPoints);
-		pointsInput.setValidCountRange( 2, Integer.MAX_VALUE );
-		pointsInput.setUnitType(DistanceUnit.class);
-		this.addInput(pointsInput);
 
 		animation = new BooleanInput("Animation", "Key Inputs", true);
 		this.addInput(animation);
@@ -240,39 +220,21 @@ public class EntityDelay extends LinkedComponent implements HasScreenPoints {
 			double dist = ( simTime - entry.startTime ) / entry.duration * totalLength;
 
 			// Set the position for the entity
-			entry.ent.setGlobalPosition(this.getPositionForDistance( dist));
+			Vec3d localPos = this.getPositionForDistance(dist);
+			entry.ent.setGlobalPosition(this.getGlobalPosition(localPos));
 		}
 	}
 
 	@Override
-	public HasScreenPoints.PointsInfo[] getScreenPoints() {
+	public PolylineInfo[] getScreenPoints() {
 		synchronized(screenPointLock) {
 			if (cachedPointInfo == null) {
-				cachedPointInfo = new HasScreenPoints.PointsInfo[1];
-				HasScreenPoints.PointsInfo pi = new HasScreenPoints.PointsInfo();
-				cachedPointInfo[0] = pi;
-
-				pi.points = pointsInput.getValue();
-				pi.color = colorInput.getValue();
-				pi.width = widthInput.getValue().intValue();
-				if (pi.width < 1) pi.width = 1;
+				int w = Math.max(1, widthInput.getValue().intValue());
+				cachedPointInfo = new PolylineInfo[1];
+				cachedPointInfo[0] = new PolylineInfo(pointsInput.getValue(), colorInput.getValue(), w);
 			}
 			return cachedPointInfo;
 		}
 	}
 
-	@Override
-	public boolean selectable() {
-		return true;
-	}
-
-	/**
-	 *  Inform simulation and editBox of new positions.
-	 */
-	@Override
-	public void dragged(Vec3d dist) {
-		KeywordIndex kw = InputAgent.formatPointsInputs(pointsInput.getKeyword(), pointsInput.getValue(), dist);
-		InputAgent.apply(this, kw);
-		super.dragged(dist);
-	}
 }

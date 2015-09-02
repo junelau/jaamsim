@@ -18,6 +18,7 @@ import java.util.ArrayList;
 import java.util.HashMap;
 
 import com.jaamsim.DisplayModels.DisplayModel;
+import com.jaamsim.DisplayModels.PolylineModel;
 import com.jaamsim.DisplayModels.ShapeModel;
 import com.jaamsim.DisplayModels.ImageModel;
 import com.jaamsim.DisplayModels.TextModel;
@@ -35,13 +36,13 @@ import com.jaamsim.input.KeywordIndex;
 import com.jaamsim.input.Output;
 import com.jaamsim.input.RelativeEntityInput;
 import com.jaamsim.input.Vec3dInput;
+import com.jaamsim.input.Vec3dListInput;
 import com.jaamsim.math.Color4d;
 import com.jaamsim.math.Mat4d;
 import com.jaamsim.math.Quaternion;
 import com.jaamsim.math.Transform;
 import com.jaamsim.math.Vec3d;
 import com.jaamsim.render.DisplayModelBinding;
-import com.jaamsim.render.HasScreenPoints;
 import com.jaamsim.render.RenderUtils;
 import com.jaamsim.ui.FrameBox;
 import com.jaamsim.units.AngleUnit;
@@ -55,6 +56,7 @@ import com.jogamp.newt.event.KeyEvent;
  * components like the eventManager.
  */
 public class DisplayEntity extends Entity {
+
 	@Keyword(description = "The point in the region at which the alignment point of the object is positioned.",
 	         exampleList = {"-3.922 -1.830 0.000 m"})
 	protected final Vec3dInput positionInput;
@@ -72,6 +74,12 @@ public class DisplayEntity extends Entity {
 	                "expressed with respect to a unit box centered about { 0 0 0 }.",
 	         exampleList = {"-0.5 -0.5 0.0"})
 	protected final Vec3dInput alignmentInput;
+
+	@Keyword(description = "A list of points in { x, y, z } coordinates that define a polyline. "
+			+ "When two coordinates are given it is assumed that z = 0." ,
+             exampleList = {"{ 1.0 1.0 0.0 m } { 2.0 2.0 0.0 m } { 3.0 3.0 0.0 m }",
+			                "{ 1.0 1.0 m } { 2.0 2.0 m } { 3.0 3.0 m }"})
+	protected final Vec3dListInput pointsInput;
 
 	@Keyword(description = "The name of the Region containing the object.  Applies an offset " +
 			        "to the Position of the object corresponding to the Region's " +
@@ -129,6 +137,14 @@ public class DisplayEntity extends Entity {
 		orientationInput.setUnitType(AngleUnit.class);
 		this.addInput(orientationInput);
 
+		ArrayList<Vec3d> defPoints =  new ArrayList<>();
+		defPoints.add(new Vec3d(0.0d, 0.0d, 0.0d));
+		defPoints.add(new Vec3d(1.0d, 0.0d, 0.0d));
+		pointsInput = new Vec3dListInput("Points", "Graphics", defPoints);
+		pointsInput.setValidCountRange( 2, Integer.MAX_VALUE );
+		pointsInput.setUnitType(DistanceUnit.class);
+		this.addInput(pointsInput);
+
 		regionInput = new EntityInput<>(Region.class, "Region", "Graphics", null);
 		this.addInput(regionInput);
 
@@ -171,6 +187,9 @@ public class DisplayEntity extends Entity {
 		// Set the default Alignment
 		alignmentInput.setDefaultValue(type.getDefaultAlignment());
 		this.setAlignment(type.getDefaultAlignment());
+
+		// Choose which set of keywords to show
+		this.setGraphicsKeywords();
 	}
 
 	@Override
@@ -189,6 +208,49 @@ public class DisplayEntity extends Entity {
 		this.setOrientation(orientationInput.getValue());
 		this.setDisplayModelList(displayModelListInput.getValue());
 		this.setRegion(regionInput.getValue());
+	}
+
+	private void showStandardGraphicsKeywords(boolean bool) {
+		positionInput.setHidden(!bool);
+		sizeInput.setHidden(!bool);
+		alignmentInput.setHidden(!bool);
+		orientationInput.setHidden(!bool);
+	}
+
+	private void showPolylineGraphicsKeywords(boolean bool) {
+		pointsInput.setHidden(!bool);
+	}
+
+	public boolean usePointsInput() {
+		ArrayList<DisplayModel> dmList = displayModelListInput.getValue();
+		if (dmList == null || dmList.isEmpty())
+			return false;
+		return dmList.get(0) instanceof PolylineModel;
+	}
+
+	private void setGraphicsKeywords() {
+
+		// No displaymodel
+		if (this instanceof OverlayEntity || displayModelListInput.getValue() == null) {
+			showStandardGraphicsKeywords(false);
+			showPolylineGraphicsKeywords(false);
+			regionInput.setHidden(true);
+			relativeEntity.setHidden(true);
+			show.setHidden(true);
+			movable.setHidden(true);
+			return;
+		}
+
+		// Polyline type displaymodel
+		if (usePointsInput()) {
+			showStandardGraphicsKeywords(false);
+			showPolylineGraphicsKeywords(true);
+			return;
+		}
+
+		// Standard displaymodel
+		showStandardGraphicsKeywords(true);
+		showPolylineGraphicsKeywords(false);
 	}
 
 	@Override
@@ -217,7 +279,7 @@ public class DisplayEntity extends Entity {
 				alignBottom = false;
 		}
 
-		if (this instanceof Graph || this instanceof HasScreenPoints || this instanceof Region) {
+		if (this instanceof Graph || this.usePointsInput() || this instanceof Region) {
 			alignBottom = false;
 		}
 
@@ -634,9 +696,18 @@ public class DisplayEntity extends Entity {
 		newPos.add3(distance);
 		if (Simulation.isSnapToGrid())
 			newPos = Simulation.getSnapGridPosition(newPos);
-		this.setPosition(newPos);
 
 		KeywordIndex kw = InputAgent.formatPointInputs(positionInput.getKeyword(), newPos, "m");
+		InputAgent.apply(this, kw);
+
+		if (!usePointsInput())
+			return;
+		ArrayList<Vec3d> points = pointsInput.getValue();
+		if (points == null || points.isEmpty())
+			return;
+		Vec3d dist = new Vec3d(newPos);
+		dist.sub3(points.get(0));
+		kw = InputAgent.formatPointsInputs(pointsInput.getKeyword(), pointsInput.getValue(), dist);
 		InputAgent.apply(this, kw);
 	}
 
@@ -733,6 +804,37 @@ public class DisplayEntity extends Entity {
 		if (in == displayModelListInput) {
 			this.setDisplayModelList( displayModelListInput.getValue() );
 		}
+
+		// If Points were input, then use them to set the start and end coordinates
+		if( in == pointsInput ) {
+			synchronized(screenPointLock) {
+				cachedPointInfo = null;
+			}
+			return;
+		}
+	}
+
+	protected Object screenPointLock = new Object();
+	protected PolylineInfo[] cachedPointInfo;
+
+	public PolylineInfo[] getScreenPoints() {
+		synchronized(screenPointLock) {
+			if (cachedPointInfo == null) {
+				cachedPointInfo = new PolylineInfo[1];
+				cachedPointInfo[0] = new PolylineInfo(pointsInput.getValue(), null, -1);
+			}
+			return cachedPointInfo;
+		}
+	}
+
+	public ArrayList<Vec3d> getPoints() {
+		synchronized(screenPointLock) {
+			return new ArrayList<>(pointsInput.getValue());
+		}
+	}
+
+	public boolean selectable() {
+		return true;
 	}
 
 	public final void setTagColour(String tagName, Color4d ca) {

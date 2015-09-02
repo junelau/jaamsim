@@ -92,6 +92,7 @@ public class Entity {
 		this.addInput(trace);
 
 		desc = new StringInput("Description", "Key Inputs", "");
+		desc.setHidden(true);
 		this.addInput(desc);
 
 		attributeDefinitionList = new AttributeDefinitionListInput(this, "AttributeDefinitionList",
@@ -770,9 +771,7 @@ public class Entity {
 		return entityName;
 	}
 
-	@Output(name = "Description",
-	        description="A string describing this entity.")
-	public String getDescription(double simTime) {
+	public String getDescription() {
 		return desc.getValue();
 	}
 

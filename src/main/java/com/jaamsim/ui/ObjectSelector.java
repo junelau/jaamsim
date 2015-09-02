@@ -49,6 +49,7 @@ import com.jaamsim.controllers.RenderManager;
 import com.jaamsim.input.InputAgent;
 import com.jaamsim.input.KeywordIndex;
 import com.jaamsim.math.Vec3d;
+import com.jaamsim.units.Unit;
 
 public class ObjectSelector extends FrameBox {
 	private static ObjectSelector myInstance;
@@ -127,6 +128,10 @@ public class ObjectSelector extends FrameBox {
 				return;
 			}
 		}
+
+		// Entity not found in the tree
+		tree.setSelectionPath(null);
+		tree.setEditable(false);
 	}
 
 	@Override
@@ -188,6 +193,14 @@ public class ObjectSelector extends FrameBox {
 		// Clear the present tree
 		top.removeAllChildren();
 
+		// Add the instance for Simulation to the top of the tree as a single leaf node
+		top.add(new DefaultMutableTreeNode(Simulation.getInstance(), false));
+
+		// Add the instance for TLS if present
+		Entity tls = Entity.getNamedEntity("TLS");
+		if (tls != null)
+			top.add(new DefaultMutableTreeNode(tls, false));
+
 		// Create the tree structure for palettes and object types in the correct order
 		for (int i = 0; i < ObjectType.getAll().size(); i++) {
 			try {
@@ -213,6 +226,18 @@ public class ObjectSelector extends FrameBox {
 		for (int i = 0; i < Entity.getAll().size(); i++) {
 			try {
 				final Entity ent = Entity.getAll().get(i);
+
+				// The instance for Simulation has already been added
+				if (ent == Simulation.getInstance())
+					continue;
+
+				// The instance for TLS has already been added
+				if (ent == tls)
+					continue;
+
+				// Do not include the units or views
+				if (ent instanceof Unit || ent instanceof View)
+					continue;
 
 				// Skip an entity that is locked
 				if (ent.testFlag(Entity.FLAG_LOCKED))
@@ -261,6 +286,11 @@ public class ObjectSelector extends FrameBox {
 		paletteEnum = top.children();
 		while (paletteEnum.hasMoreElements()) {
 			DefaultMutableTreeNode paletteNode = paletteEnum.nextElement();
+
+			// Do not remove any of the special nodes such as the instance for Simulation
+			if (!paletteNode.getAllowsChildren())
+				continue;
+
 			if (paletteNode.isLeaf())
 				nodesToRemove.add(paletteNode);
 		}
