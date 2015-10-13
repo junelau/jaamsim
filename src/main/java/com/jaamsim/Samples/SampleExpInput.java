@@ -21,11 +21,10 @@ import com.jaamsim.basicsim.Entity;
 import com.jaamsim.input.Input;
 import com.jaamsim.input.InputErrorException;
 import com.jaamsim.input.KeywordIndex;
-import com.jaamsim.units.DimensionlessUnit;
 import com.jaamsim.units.Unit;
 
 public class SampleExpInput extends Input<SampleProvider> {
-	private Class<? extends Unit> unitType = DimensionlessUnit.class;
+	private Class<? extends Unit> unitType;
 	private Entity thisEnt;
 	private double minValue = Double.NEGATIVE_INFINITY;
 	private double maxValue = Double.POSITIVE_INFINITY;
@@ -76,7 +75,9 @@ public class SampleExpInput extends Input<SampleProvider> {
 	public void getValueTokens(ArrayList<String> toks) {
 		if (value == null) return;
 
-		if (value instanceof SampleExpression || value instanceof SampleConstant) {
+		if (value instanceof SampleExpression ||
+				value instanceof SampleConstant ||
+				value instanceof SampleOutput) {
 			super.getValueTokens(toks);
 			return;
 		}

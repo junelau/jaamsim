@@ -74,17 +74,22 @@ public class StateEntity extends DisplayEntity {
 		if (testFlag(FLAG_GENERATED))
 			return;
 
+		// Create state trace file if required
+		if (traceState.getValue()) {
+			String fileName = InputAgent.getReportFileName(InputAgent.getRunName() + "-" + this.getName() + ".trc");
+			stateReportFile = new FileEntity( fileName);
+		}
+	}
+
+	@Override
+	public void lateInit() {
+		super.lateInit();
+
 		stateListeners.clear();
 		for (Entity ent : Entity.getClonesOfIterator(Entity.class, StateEntityListener.class)) {
 			StateEntityListener sel = (StateEntityListener)ent;
 			if (sel.isWatching(this))
 				stateListeners.add(sel);
-		}
-
-		// Create state trace file if required
-		if (traceState.getValue()) {
-			String fileName = InputAgent.getReportFileName(InputAgent.getRunName() + "-" + this.getName() + ".trc");
-			stateReportFile = new FileEntity( fileName);
 		}
 	}
 
@@ -214,9 +219,6 @@ public class StateEntity extends DisplayEntity {
 	 * @param next the state this Entity is currently in
 	 */
 	public void stateChanged(StateRecord prev, StateRecord next) {
-		for (StateEntityListener each : stateListeners) {
-			each.updateForStateChange(this, prev, next);
-		}
 
 		if (traceState.getValue()) {
 			long curTick = getSimTicks();
@@ -226,6 +228,10 @@ public class StateEntity extends DisplayEntity {
 			                       timeOfPrevStart, this.getName(),
 			                       prev.name, duration);
 			stateReportFile.flush();
+		}
+
+		for (StateEntityListener each : stateListeners) {
+			each.updateForStateChange(this, prev, next);
 		}
 	}
 
@@ -388,5 +394,14 @@ public class StateEntity extends DisplayEntity {
 
 		return ticks;
 	}
+
+	/**
+	 * Returns the number of hours the entity is in use.
+	 */
+	public double getWorkingHours() {
+		return getWorkingTicks() / Simulation.getSimTimeFactor();
+	}
+
+	public void setPresentState() {}
 
 }

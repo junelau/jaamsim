@@ -25,6 +25,9 @@ import com.jaamsim.Samples.SampleExpression;
 import com.jaamsim.Samples.SampleOutput;
 import com.jaamsim.Samples.SampleProvider;
 import com.jaamsim.Samples.TimeSeriesConstantDouble;
+import com.jaamsim.StringProviders.StringProvider;
+import com.jaamsim.StringProviders.StringProvOutput;
+import com.jaamsim.StringProviders.StringProvSample;
 import com.jaamsim.basicsim.Entity;
 import com.jaamsim.basicsim.Group;
 import com.jaamsim.basicsim.ObjectType;
@@ -1382,25 +1385,99 @@ public abstract class Input<T> {
 		}
 	}
 
+	public static OutputChain parseOutputChain(KeywordIndex kw) {
+		String entName = "";
+		String outputName = "";
+		ArrayList<String> outputNameList = new ArrayList<>();
+
+		// 1) Expression syntax
+		if (kw.numArgs() == 1) {
+			String exp = kw.getArg(0);
+			if (exp.charAt(0) != '[')
+				throw new InputErrorException("Left bracket not found");
+			int k = exp.indexOf(']');
+			if (k == -1)
+				throw new InputErrorException("Right bracket not found");
+			entName = exp.substring(1, k);
+
+			if (exp.charAt(k+1) != '.')
+				throw new InputErrorException("Missing period after the right bracket");
+
+			StringBuilder sb = new StringBuilder();
+			for (int i=k+2; i<exp.length(); i++) {
+				char ch = exp.charAt(i);
+				if (ch == '.') {
+					outputNameList.add(sb.toString());
+					sb = new StringBuilder();
+					continue;
+				}
+				sb.append(ch);
+			}
+			outputNameList.add(sb.toString());
+			outputName = outputNameList.remove(0);
+		}
+
+		// 2) Output syntax
+		else {
+			entName = kw.getArg(0);
+			outputName = kw.getArg(1);
+			for (int i=2; i<kw.numArgs(); i++) {
+				outputNameList.add(kw.getArg(i));
+			}
+		}
+
+		// Construct the OutputChain
+		Entity ent = Entity.getNamedEntity(entName);
+		if (ent == null)
+			throw new InputErrorException(INP_ERR_ENTNAME, entName);
+		if (ent instanceof ObjectType)
+			throw new InputErrorException("%s is the name of a class, not an instance",
+					ent.getName());
+
+		OutputHandle out = ent.getOutputHandle(outputName);
+		if (out == null)
+			throw new InputErrorException("Output named %s not found for Entity %s",
+					outputName, entName);
+
+		if (!outputNameList.isEmpty() && !(Entity.class).isAssignableFrom(out.getReturnType()))
+			throw new InputErrorException("The first output in an output chain must return an Entity");
+
+		return new OutputChain(ent, outputName, out, outputNameList);
+	}
+
+	public static StringProvider parseStringProvider(KeywordIndex kw, Entity thisEnt, Class<? extends Unit> unitType) {
+
+		// Try to parse the input as an OutputChain
+		try {
+			OutputChain chain = Input.parseOutputChain(kw);
+			return new StringProvOutput(chain, unitType);
+		}
+		catch (InputErrorException e) {}
+
+		// Parse the input as a SampleProvider
+		SampleProvider samp = Input.parseSampleExp(kw, thisEnt, Double.NEGATIVE_INFINITY, Double.POSITIVE_INFINITY, unitType);
+		return new StringProvSample(samp);
+	}
+
 	public static SampleProvider parseSampleExp(KeywordIndex kw,
 			Entity thisEnt, double minValue, double maxValue, Class<? extends Unit> unitType) {
 
-		Input.assertCount(kw, 1, 2);
-
-		// If there are two inputs, it could be a number and its unit or an entity and its output
-		if (kw.numArgs() == 2) {
-
-			// A) Try an entity and its output
+		// If there are two or more inputs, it could be a chain of outputs
+		if (kw.numArgs() >= 2) {
 			try {
-				return Input.parseSampleOutput(kw, unitType);
+				return new SampleOutput(Input.parseOutputChain(kw), unitType);
 			}
-			catch (InputErrorException e) {}
+			catch (InputErrorException e) {
+				if (kw.numArgs() > 2 || unitType == null)
+					throw new InputErrorException(e.getMessage());
+			}
+		}
 
-			// B) Try a number and its unit
+		// If there are exactly two inputs, and it is not an output chain, then it must be a number and its unit
+		if (kw.numArgs() == 2) {
 			if (unitType == DimensionlessUnit.class)
 				throw new InputErrorException(INP_ERR_COUNT, 1, kw.argString());
-			DoubleVector tmp = null;
-			tmp = Input.parseDoubles(kw, minValue, maxValue, unitType);
+			DoubleVector tmp = Input.parseDoubles(kw, minValue, maxValue, unitType);
 			return new SampleConstant(unitType, tmp.get(0));
 		}
 
@@ -1443,36 +1520,6 @@ public abstract class Input<T> {
 		}
 		catch (ExpError e) {
 			throw new InputErrorException(e.toString());
-		}
-	}
-
-	public static SampleOutput parseSampleOutput(KeywordIndex kw, Class<? extends Unit> unitType) {
-
-		Input.assertCount(kw, 2);
-		try {
-			Entity ent = Input.parseEntity(kw.getArg(0), Entity.class);
-			if (ent instanceof ObjectType)
-				throw new InputErrorException("%s is the name of a class, not an instance",
-						ent.getName());
-
-			String outputName = kw.getArg(1);
-			if (!ent.hasOutput(outputName))
-				throw new InputErrorException("Output named %s not found for Entity %s",
-						outputName, ent.getName());
-
-			OutputHandle out = ent.getOutputHandle(outputName);
-			if (!out.isNumericValue())
-				throw new InputErrorException("Output named %s for Entity %s is not a numeric value.",
-						outputName, ent.getName());
-
-			if (unitType != UserSpecifiedUnit.class && out.getUnitType() != unitType)
-				throw new InputErrorException("Output named %s for Entity %s has unit type of %s. Expected %s",
-						outputName, ent.getName(), out.getUnitType(), unitType);
-
-			return new SampleOutput(out);
-		}
-		catch (InputErrorException e) {
-			throw new InputErrorException(e.getMessage());
 		}
 	}
 

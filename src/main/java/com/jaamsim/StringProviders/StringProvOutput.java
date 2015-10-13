@@ -12,53 +12,42 @@
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
  */
-package com.jaamsim.Samples;
+package com.jaamsim.StringProviders;
 
 import com.jaamsim.basicsim.ErrorException;
 import com.jaamsim.input.OutputChain;
 import com.jaamsim.input.OutputHandle;
 import com.jaamsim.units.Unit;
 
-public class SampleOutput implements SampleProvider {
+public class StringProvOutput implements StringProvider {
 
 	private final OutputChain chain;
 	private final Class<? extends Unit> unitType;
 
-	public SampleOutput(OutputChain ch, Class<? extends Unit> ut) {
+	public StringProvOutput(OutputChain ch, Class<? extends Unit> ut) {
 		chain = ch;
 		unitType = ut;
 	}
 
 	@Override
-	public Class<? extends Unit> getUnitType() {
-		return unitType;
-	}
+	public String getNextString(double simTime, String fmt, double siFactor) {
 
-	@Override
-	public double getNextSample(double simTime) {
 		OutputHandle out = chain.getOutputHandle(simTime);
 
 		if (out == null)
-			throw new ErrorException("Output is null.");
-		if (out.getUnitType() != unitType)
-			throw new ErrorException("Unit mismatch. Expected a %s, received a %s", unitType, out.getUnitType());
+			throw new ErrorException("Expression cannot be evaluated: %s.", chain.toString());
 
-		return out.getValueAsDouble(simTime, 0.0);
-	}
-
-	@Override
-	public double getMeanValue(double simTime) {
-		return 0;
-	}
-
-	@Override
-	public double getMinValue() {
-		return Double.NEGATIVE_INFINITY;
-	}
-
-	@Override
-	public double getMaxValue() {
-		return Double.POSITIVE_INFINITY;
+		if (out.isNumericValue()) {
+			if (out.getUnitType() != unitType && unitType != null)
+				throw new ErrorException("Unit mismatch. Expected a %s, received a %s",
+						unitType, out.getUnitType());
+			double d = out.getValueAsDouble(simTime, 0.0d);
+			return String.format(fmt, d/siFactor);
+		}
+		else {
+			Object obj = out.getValue(simTime, out.getReturnType());
+			return String.format(fmt, obj);
+		}
 	}
 
 	@Override
